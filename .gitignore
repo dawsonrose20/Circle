@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Xcode — user-specific state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Xcode — build output
+build/
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Claude Code — machine-local settings
+.claude/settings.local.json
+
+# Secrets — never commit real credentials
+.env
+.env.*
+!.env.example
+supabase/.env
+supabase/.temp/
