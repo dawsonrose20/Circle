@@ -103,12 +103,21 @@ final class SupabaseService: ObservableObject {
     // MARK: Dev bypass (DEBUG only — stripped from release builds)
 
 #if DEBUG
+    /// Fakes an authenticated user without creating a Supabase session. Every
+    /// screen works because the app's state is local, but anything that needs a
+    /// real access token does not: `refreshPrices()` calls `auth.session`, which
+    /// throws, so live prices never load and the draft-pool placeholders persist.
     func bypassSignIn() {
         let devID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         currentUserID = devID
         currentProfile = UserProfile(id: devID, username: "devuser", teamName: "Dev Team")
         profileLoadFailed = false
         isAuthenticated = true
+        print("""
+        ⚠️ bypassSignIn: no real Supabase session was created. Market data will \
+        NOT load and every price stays at its draft-pool placeholder. Sign in \
+        with a real account to fetch live prices.
+        """)
     }
 #endif
 }
