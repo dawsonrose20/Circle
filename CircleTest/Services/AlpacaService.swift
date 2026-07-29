@@ -12,20 +12,33 @@ struct AlpacaService {
 
     struct Bar: Decodable {
         let o, h, l, c: Double
-        let t: String
+        let t: String?
     }
 
+    /// Every field is optional on purpose. Alpaca omits them per symbol — outside
+    /// market hours `latestTrade` is frequently absent — and the whole
+    /// `[String: Snapshot]` map is decoded in one call, so declaring them
+    /// required made a single incomplete symbol throw for the entire batch. That
+    /// left every stock sitting on its `draftPool()` placeholder price.
     struct Snapshot: Decodable {
-        let latestTrade: Trade
-        let dailyBar: Bar
+        let latestTrade: Trade?
+        let dailyBar: Bar?
         let prevDailyBar: Bar?
+
+        /// Most recent usable price: last trade, else today's close, else the
+        /// previous session's close.
+        var price: Double? {
+            [latestTrade?.p, dailyBar?.c, prevDailyBar?.c]
+                .compactMap { $0 }
+                .first { $0 > 0 }
+        }
 
         /// Baseline for percent-change figures, in order of preference: previous
         /// session's close, then today's open, then the latest trade. Only
         /// positive values qualify, so callers never divide by zero — and never
         /// fall back to a hardcoded placeholder price.
         var returnBaseline: Double? {
-            [prevDailyBar?.c, dailyBar.o, latestTrade.p]
+            [prevDailyBar?.c, dailyBar?.o, latestTrade?.p]
                 .compactMap { $0 }
                 .first { $0 > 0 }
         }
@@ -74,7 +87,12 @@ struct AlpacaService {
         request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw URLError(.badServerResponse, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
+            // The edge function puts the upstream reason in the body; carry it into
+            // the error so callers can log something more useful than a status code.
+            let body = String(decoding: data.prefix(300), as: UTF8.self)
+            throw URLError(.badServerResponse, userInfo: [
+                NSLocalizedDescriptionKey: "HTTP \(http.statusCode)\(body.isEmpty ? "" : ": \(body)")"
+            ])
         }
         return data
     }

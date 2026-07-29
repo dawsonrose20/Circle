@@ -84,15 +84,31 @@ class AppState: ObservableObject {
         let allSymbols = Array(Set(availableStocks.map(\.id) + rosterStocks.map(\.id)))
         guard !allSymbols.isEmpty else { return }
 
-        // Fetch independently so a bars failure doesn't block price updates (and vice versa)
-        let snaps = (try? await AlpacaService.snapshots(symbols: allSymbols, authToken: token)) ?? [:]
-        let bars  = (try? await AlpacaService.dailyBars(symbols: allSymbols, limit: 7, authToken: token)) ?? [:]
+        // Fetch independently so a bars failure doesn't block price updates (and
+        // vice versa). Log rather than swallow: `try?` here meant a failing fetch
+        // or a rejected decode looked identical to a market with no movement,
+        // leaving every stock on its placeholder price with no clue why.
+        var snaps: [String: AlpacaService.Snapshot] = [:]
+        do {
+            snaps = try await AlpacaService.snapshots(symbols: allSymbols, authToken: token)
+        } catch {
+            print("refreshPrices: snapshots failed — \(error.localizedDescription)")
+        }
+
+        var bars: [String: [AlpacaService.Bar]] = [:]
+        do {
+            bars = try await AlpacaService.dailyBars(symbols: allSymbols, limit: 7, authToken: token)
+        } catch {
+            print("refreshPrices: daily bars failed — \(error.localizedDescription)")
+        }
 
         // Update available stocks — weekStartPrice from previous close
         for i in availableStocks.indices {
             let sym = availableStocks[i].id
-            if let snap = snaps[sym] {
-                availableStocks[i].currentPrice = snap.latestTrade.p
+            // Only claim live data once a real price actually arrived, so a
+            // partial snapshot can't mark the placeholder as genuine.
+            if let snap = snaps[sym], let price = snap.price {
+                availableStocks[i].currentPrice = price
                 // The baseline must never stay at the draft-pool placeholder, or
                 // weeklyReturn is measured against a fictional price. Fall back to
                 // today's open, then to the latest trade (which reads as 0% rather
@@ -113,14 +129,14 @@ class AppState: ObservableObject {
         guard let userIdx = league.members.firstIndex(where: { $0.isCurrentUser }) else { return }
         for j in league.members[userIdx].roster.indices {
             let sym = league.members[userIdx].roster[j].id
-            if let snap = snaps[sym] {
+            if let snap = snaps[sym], let price = snap.price {
                 let firstRealPrice = !league.members[userIdx].roster[j].hasPriceData
-                league.members[userIdx].roster[j].currentPrice = snap.latestTrade.p
+                league.members[userIdx].roster[j].currentPrice = price
                 league.members[userIdx].roster[j].hasPriceData = true
                 if firstRealPrice {
                     // Replace draft-pool placeholder cost basis with first real market price
-                    league.members[userIdx].roster[j].draftCostPrice = snap.latestTrade.p
-                    league.members[userIdx].roster[j].weekStartPrice = snap.returnBaseline ?? snap.latestTrade.p
+                    league.members[userIdx].roster[j].draftCostPrice = price
+                    league.members[userIdx].roster[j].weekStartPrice = snap.returnBaseline ?? price
                 }
             }
             if let stockBars = bars[sym] {

@@ -87,10 +87,38 @@ Deno.serve(async (req) => {
   });
 
   if (!alpacaRes.ok) {
-    return new Response("Upstream error", { status: alpacaRes.status });
+    // Alpaca explains the rejection in the body (unpermitted feed, bad symbol,
+    // expired subscription). Log it in full for the dashboard, and pass a
+    // trimmed version to the client so failures are diagnosable from the app
+    // instead of surfacing as a bare "Upstream error".
+    const detail = (await alpacaRes.text().catch(() => "")).slice(0, 500);
+    console.error(
+      `market-data: Alpaca ${alpacaRes.status} for type=${type} feed=${ALPACA_FEED} ` +
+      `symbols=${symbols} — ${detail || "(empty body)"}`
+    );
+    return new Response(
+      `Upstream error ${alpacaRes.status}: ${detail || "(no detail)"}`,
+      { status: alpacaRes.status },
+    );
   }
 
   const data = await alpacaRes.json();
+
+  // A 200 doesn't mean every symbol came back whole — Alpaca omits fields per
+  // symbol (outside market hours `latestTrade` is often absent). The client
+  // decodes the whole map at once, so one gap can drop every price. Log a
+  // summary rather than the payload, which would flood the logs.
+  if (type === "snapshots" && data && typeof data === "object") {
+    const snaps = data as Record<string, Record<string, unknown> | null>;
+    const syms = Object.keys(snaps);
+    const noTrade = syms.filter((s) => !snaps[s]?.latestTrade);
+    const noDaily = syms.filter((s) => !snaps[s]?.dailyBar);
+    console.log(
+      `market-data: snapshots ok — ${syms.length} symbols, ` +
+      `${noTrade.length} missing latestTrade${noTrade.length ? ` (${noTrade.slice(0, 10).join(",")})` : ""}, ` +
+      `${noDaily.length} missing dailyBar${noDaily.length ? ` (${noDaily.slice(0, 10).join(",")})` : ""}`
+    );
+  }
 
   // Cache for 60 seconds
   cache.set(cacheKey, { data, expires: Date.now() + 60_000 });
