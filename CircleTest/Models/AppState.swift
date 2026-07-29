@@ -93,8 +93,13 @@ class AppState: ObservableObject {
             let sym = availableStocks[i].id
             if let snap = snaps[sym] {
                 availableStocks[i].currentPrice = snap.latestTrade.p
-                if let prev = snap.prevDailyBar {
-                    availableStocks[i].weekStartPrice = prev.c
+                // The baseline must never stay at the draft-pool placeholder, or
+                // weeklyReturn is measured against a fictional price. Fall back to
+                // today's open, then to the latest trade (which reads as 0% rather
+                // than a bogus number). Non-positive values are skipped so the
+                // division in weeklyReturn can't blow up.
+                if let baseline = snap.returnBaseline {
+                    availableStocks[i].weekStartPrice = baseline
                 }
                 availableStocks[i].hasPriceData = true
             }
@@ -115,7 +120,7 @@ class AppState: ObservableObject {
                 if firstRealPrice {
                     // Replace draft-pool placeholder cost basis with first real market price
                     league.members[userIdx].roster[j].draftCostPrice = snap.latestTrade.p
-                    league.members[userIdx].roster[j].weekStartPrice = snap.prevDailyBar?.c ?? snap.latestTrade.p
+                    league.members[userIdx].roster[j].weekStartPrice = snap.returnBaseline ?? snap.latestTrade.p
                 }
             }
             if let stockBars = bars[sym] {

@@ -57,7 +57,8 @@ struct Stock: Identifiable, Hashable, Codable {
     var hasPriceData: Bool = false  // true only once Alpaca API provides live quotes
 
     var weeklyReturn: Double {
-        (currentPrice - weekStartPrice) / weekStartPrice
+        guard weekStartPrice > 0 else { return 0 }
+        return (currentPrice - weekStartPrice) / weekStartPrice
     }
     var weeklyGainLoss: Double {
         currentPrice - weekStartPrice

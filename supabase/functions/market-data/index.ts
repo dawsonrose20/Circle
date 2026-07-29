@@ -6,6 +6,12 @@ const ALPACA_BASE = "https://data.alpaca.markets/v2";
 const ALPACA_KEY_ID     = Deno.env.get("ALPACA_KEY_ID");
 const ALPACA_KEY_SECRET = Deno.env.get("ALPACA_KEY_SECRET");
 
+// Which Alpaca data feed to query. "iex" is a single exchange carrying ~2% of
+// US volume, so its prints are thin and often stale; "delayed_sip" is the full
+// consolidated tape 15 minutes behind, and "sip" is the same in real time but
+// needs a paid subscription. Overridable so the plan can change without a deploy.
+const ALPACA_FEED = Deno.env.get("ALPACA_FEED") ?? "delayed_sip";
+
 // Simple 60-second in-memory cache shared across requests in the same isolate
 const cache = new Map<string, { data: unknown; expires: number }>();
 
@@ -70,8 +76,8 @@ Deno.serve(async (req) => {
 
   const alpacaURL =
     type === "snapshots"
-      ? `${ALPACA_BASE}/stocks/snapshots?symbols=${symbols}&feed=iex`
-      : `${ALPACA_BASE}/stocks/bars?symbols=${symbols}&timeframe=${timeframe}&limit=${limit}&feed=iex`;
+      ? `${ALPACA_BASE}/stocks/snapshots?symbols=${symbols}&feed=${ALPACA_FEED}`
+      : `${ALPACA_BASE}/stocks/bars?symbols=${symbols}&timeframe=${timeframe}&limit=${limit}&feed=${ALPACA_FEED}`;
 
   const alpacaRes = await fetch(alpacaURL, {
     headers: {

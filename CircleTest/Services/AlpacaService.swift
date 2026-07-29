@@ -19,6 +19,16 @@ struct AlpacaService {
         let latestTrade: Trade
         let dailyBar: Bar
         let prevDailyBar: Bar?
+
+        /// Baseline for percent-change figures, in order of preference: previous
+        /// session's close, then today's open, then the latest trade. Only
+        /// positive values qualify, so callers never divide by zero — and never
+        /// fall back to a hardcoded placeholder price.
+        var returnBaseline: Double? {
+            [prevDailyBar?.c, dailyBar.o, latestTrade.p]
+                .compactMap { $0 }
+                .first { $0 > 0 }
+        }
     }
 
     private struct BarsResponse: Decodable {

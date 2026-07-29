@@ -622,8 +622,12 @@ struct TradingView: View {
 ///    can't cancel/restart the scroll — a common source of stutter.
 ///  • Width is captured through a `PreferenceKey` (updates only when it changes),
 ///    avoiding GeometryReader layout feedback loops.
-///  • The moving row is `.fixedSize()` inside a clipped viewport so it overflows
-///    instead of being compressed/truncated.
+///  • The moving row is `.fixedSize(horizontal: true, vertical: false)` so it
+///    overflows instead of being compressed/truncated — but it lives in an
+///    `.overlay` over a flexible-width `Color.clear`, not in a `ZStack`. A ZStack
+///    sizes itself to its largest child, which let the row's multi-thousand-point
+///    ideal width propagate up and push the app's tab bar off-screen. Overlay
+///    content cannot grow its parent, so the tape stays a 34pt strip.
 struct TickerTape: View {
     let items: [Stock]
     var speed: Double = 40   // points per second
@@ -640,23 +644,28 @@ struct TickerTape: View {
                     ? -CGFloat((t * speed).truncatingRemainder(dividingBy: Double(unitWidth)))
                     : 0
 
-                ZStack(alignment: .leading) {
-                    Color.clear.frame(height: 34)   // defines the viewport width
-                    HStack(spacing: 0) {
-                        row
-                            .background(
-                                GeometryReader { geo in
-                                    Color.clear.preference(key: TickerWidthKey.self, value: geo.size.width)
-                                }
-                            )
-                        row   // duplicate for the seamless loop
+                // Color.clear adopts the width the container proposes, and the
+                // marquee rides in an overlay so its far larger ideal width can't
+                // grow the parent. A ZStack can't do this: it sizes to its largest
+                // child, so the row's width leaked upward and blew out the layout.
+                Color.clear
+                    .frame(height: 34)
+                    .overlay(alignment: .leading) {
+                        HStack(spacing: 0) {
+                            row
+                                .background(
+                                    GeometryReader { geo in
+                                        Color.clear.preference(key: TickerWidthKey.self, value: geo.size.width)
+                                    }
+                                )
+                            row   // duplicate for the seamless loop
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
+                        .offset(x: offsetX)
                     }
-                    .fixedSize()
-                    .offset(x: offsetX)
-                }
+                    .clipped()
             }
             .frame(height: 34)
-            .clipped()
             .onPreferenceChange(TickerWidthKey.self) { unitWidth = $0 }
             .background(Color.cBg)
             .overlay(alignment: .top)    { CircleDivider(weight: .section) }
