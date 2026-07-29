@@ -77,12 +77,24 @@ class AppState: ObservableObject {
     }
 
     func refreshPrices() async {
-        guard let session = try? await supabase.auth.session else { return }
+        // Both of these used to return silently, which looked exactly like a
+        // successful refresh that found no price movement.
+        let session: Session
+        do {
+            session = try await supabase.auth.session
+        } catch {
+            print("refreshPrices: no Supabase session, skipping — \(error.localizedDescription)")
+            return
+        }
         let token = session.accessToken
 
         let rosterStocks = league.currentUser?.roster ?? []
         let allSymbols = Array(Set(availableStocks.map(\.id) + rosterStocks.map(\.id)))
-        guard !allSymbols.isEmpty else { return }
+        guard !allSymbols.isEmpty else {
+            print("refreshPrices: no symbols to refresh (availableStocks and roster are both empty)")
+            return
+        }
+        print("refreshPrices: requesting \(allSymbols.count) symbols")
 
         // Fetch independently so a bars failure doesn't block price updates (and
         // vice versa). Log rather than swallow: `try?` here meant a failing fetch
@@ -101,6 +113,9 @@ class AppState: ObservableObject {
         } catch {
             print("refreshPrices: daily bars failed — \(error.localizedDescription)")
         }
+
+        let usable = snaps.values.filter { $0.price != nil }.count
+        print("refreshPrices: \(snaps.count) snapshots decoded, \(usable) with a usable price, \(bars.count) bar series")
 
         // Update available stocks — weekStartPrice from previous close
         for i in availableStocks.indices {
